@@ -1487,6 +1487,22 @@ class StateManager:
                 row = await cursor.fetchone()
                 return dict(row) if row else None
 
+    async def outbox_correspondents(self, days: int = 90) -> tuple[set[str], set[str]]:
+        """Who we have written to, and the Message-IDs we sent, in the last
+        ``days``. A shared mailbox is read against this: only mail from these
+        people, or answering these messages, is Harvey's to handle."""
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).replace(tzinfo=None).isoformat()
+        async with self._connect() as db:
+            async with db.execute(
+                "SELECT to_email, message_id FROM outbox "
+                "WHERE status = 'sent' AND COALESCE(sent_at, created_at) >= ?",
+                (cutoff,),
+            ) as cursor:
+                rows = await cursor.fetchall()
+        emails = {(r[0] or "").strip().lower() for r in rows if r[0]}
+        ids = {(r[1] or "").strip() for r in rows if r[1]}
+        return emails, ids
+
     # ── Signal vocabulary (governed; user-confirmed before collection) ──
 
     async def upsert_signal_code(

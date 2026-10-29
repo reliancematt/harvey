@@ -35,6 +35,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+pulsebids = [
+    "openpyxl>=3.1,<4",   # reads the outreach workbook directly
+]
 dev = [
     "pytest>=8.0,<9",
     "pytest-asyncio>=0.23,<1",

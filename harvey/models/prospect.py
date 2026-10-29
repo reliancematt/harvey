@@ -57,7 +57,7 @@ class Prospect(BaseModel):
     @property
     def is_company_inbox(self) -> bool:
         """A company's published general address (info@, office@) with no named person."""
-        return self.source == COMPANY_INBOX_SOURCE
+        return self.source in (COMPANY_INBOX_SOURCE, "pulsebids:inbox")
 
     def full_name(self) -> str:
         name = f"{self.first_name} {self.last_name}".strip()

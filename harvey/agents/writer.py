@@ -14,6 +14,7 @@ import logging
 import re
 from datetime import datetime, timezone
 
+from harvey.pulsebids import is_pulsebids_source
 from harvey.brain import Brain
 from harvey.config import HarveyConfig
 from harvey.humanize import humanize, humanizer_enabled
@@ -77,6 +78,9 @@ class Writer:
         prospects_with_email = [
             p for p in new_prospects
             if p.email and (p.email_status or "guess") in WRITABLE_EMAIL_STATUSES
+            # PulseBids leads get one rendered email (harvey pulsebids stage),
+            # never a model-written sequence.
+            and not is_pulsebids_source(p.source)
         ]
         # Someone at their company already replied: no cold email to write.
         prospects_with_email = [

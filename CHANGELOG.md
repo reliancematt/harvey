@@ -5,6 +5,15 @@ Notable changes to Harvey. Dates are release dates; the format follows
 follow [semver](https://semver.org/), with the caveat that Harvey is pre-1.0 and
 minor versions can still change behaviour.
 
+## Unreleased
+
+### Added
+- PulseBids outreach mode (`harvey pulsebids import|stage|status`, `pulsebids.enabled`):
+  one rendered email per imported lead, no model-written sequence, no follow-ups, copy
+  rules enforced in the pre-send gate. See docs/pulsebids.md.
+- SMTP/IMAP mailbox: read-only reply read for shared mailboxes (BODY.PEEK, last N days,
+  only mail from people Harvey wrote to), and optional `IMAP_SENT_FOLDER` filing.
+
 ## [Unreleased]
 
 ### Added

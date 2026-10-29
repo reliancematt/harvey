@@ -2224,8 +2224,13 @@ CATEGORY_META = {
         "blurb": "Whether the address will actually deliver, and what to do when "
                  "it won't.",
     },
+    "pulsebids": {
+        "label": "PulseBids — tender records",
+        "blurb": "Facts imported from your own tender database by "
+                 "`harvey pulsebids import`. Free; nothing here is collected from the web.",
+    },
 }
-CATEGORY_ORDER = ["discovery", "profile", "people", "verification"]
+CATEGORY_ORDER = ["discovery", "profile", "people", "verification", "pulsebids"]
 
 
 @app.get("/api/signals")

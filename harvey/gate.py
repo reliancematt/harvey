@@ -29,6 +29,7 @@ BANNED_PHRASES = (
 
 MAX_SUBJECT_LEN = 90
 MAX_BODY_WORDS = 220        # hard ceiling; sequences aim far lower
+MAX_PULSEBIDS_WORDS = 300   # rendered template + footer; see pre_send_check
 MAX_LINKS = 1
 
 EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
@@ -214,8 +215,13 @@ def pre_send_check(
     if len(subject) > MAX_SUBJECT_LEN:
         reasons.append(f"subject too long ({len(subject)} > {MAX_SUBJECT_LEN})")
     word_count = len(body.split())
-    if word_count > MAX_BODY_WORDS:
-        reasons.append(f"body too long ({word_count} words > {MAX_BODY_WORDS})")
+    # The ceiling guards against a runaway generation. A PulseBids email is
+    # rendered from a fixed template (about 200 words with its footer), so it
+    # gets a higher one; the template itself is the length control there.
+    from harvey.pulsebids import is_pulsebids_source
+    ceiling = MAX_PULSEBIDS_WORDS if is_pulsebids_source(getattr(prospect, "source", "")) else MAX_BODY_WORDS
+    if word_count > ceiling:
+        reasons.append(f"body too long ({word_count} words > {ceiling})")
 
     # Unrendered merge tags — the classic mass-mail embarrassment
     leftover = MERGE_TAG_RE.findall(subject + " " + body)
@@ -235,6 +241,13 @@ def pre_send_check(
 
     if kind == "sequence" and postal_address.strip() and postal_address.strip() not in body:
         reasons.append("postal address footer missing")
+
+    # PulseBids leads: the copy rules are code, not a prompt.
+    if prospect is not None and kind == "sequence":
+        from harvey.pulsebids import is_pulsebids_source
+        if is_pulsebids_source(getattr(prospect, "source", "")):
+            from harvey.pulsebids.copy import copy_violations
+            reasons.extend(copy_violations(subject, body))
 
     # No HTML — Harvey sends plain text only
     if re.search(r"<\s*(html|body|div|table|img|a)\b", body, re.IGNORECASE):

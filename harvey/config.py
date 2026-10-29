@@ -596,6 +596,23 @@ class WriterConfig(BaseModel):
     humanizer: bool = False
 
 
+class PulseBidsConfig(BaseModel):
+    """PulseBids losing-bidder outreach (see harvey/pulsebids/).
+
+    ``enabled`` turns Harvey into a sender and reply-handler for a lead list
+    you import yourself: it stops drafting its own sequences and stops its
+    generic prospecting, so nothing but the single rendered email is staged.
+    """
+
+    enabled: bool = False
+    # Days of the mailbox to look back on when reading replies. The mailbox is
+    # shared (support@), so Harvey reads it read-only, newest first, and
+    # keeps only mail from people it has written to.
+    reply_lookback_days: int = 21
+    # Shown in the signature line, e.g. "example.co.za".
+    website: str = ""
+
+
 class HarveyConfig(BaseModel):
     persona: PersonaConfig
     product: ProductConfig
@@ -605,6 +622,7 @@ class HarveyConfig(BaseModel):
     brain: BrainConfig = BrainConfig()
     compliance: ComplianceConfig = ComplianceConfig()
     writer: WriterConfig = WriterConfig()
+    pulsebids: PulseBidsConfig = PulseBidsConfig()
     # The file it was loaded from, so a running Harvey can re-read the
     # sending mode from that same file (refresh_sending_mode).
     _source_path: str | None = PrivateAttr(default=None)
@@ -635,6 +653,9 @@ class EnvConfig(BaseModel):
     imap_port: int = 993
     imap_username: str = ""
     imap_password: str = ""
+    # Optional: copy each sent email into this IMAP folder ("Sent" on Zoho),
+    # for providers whose SMTP does not file sent mail itself.
+    imap_sent_folder: str = ""
     # Microsoft 365 (channels.email.provider: microsoft)
     m365_client_id: str = ""
     m365_tenant_id: str = ""
@@ -752,6 +773,7 @@ def load_env() -> EnvConfig:
         imap_port=int(os.getenv("IMAP_PORT", "993").strip() or 993),
         imap_username=os.getenv("IMAP_USERNAME", "").strip(),
         imap_password=os.getenv("IMAP_PASSWORD", "").strip(),
+        imap_sent_folder=os.getenv("IMAP_SENT_FOLDER", "").strip(),
         m365_client_id=os.getenv("M365_CLIENT_ID", "").strip(),
         m365_tenant_id=os.getenv("M365_TENANT_ID", "").strip(),
         precleared_api_key=os.getenv("PRECLEARED_API_KEY", "").strip(),

@@ -160,6 +160,17 @@ async def decide_next_action(
     # every cycle would starve the writer and scout forever.
     deployable = 0 if legacy_sending_held(config) else draft_campaigns
 
+    if getattr(getattr(config, "pulsebids", None), "enabled", False):
+        # PulseBids mode: the lead list is imported by hand and the email is
+        # rendered by `harvey pulsebids stage`. No model-written sequences
+        # and no generic prospecting; replies and sending still run.
+        if open_conversations > 0:
+            action, reason = "handle_replies", f"{open_conversations} open conversation(s) waiting"
+        else:
+            action, reason = "idle", "PulseBids mode: nothing to write or find automatically"
+        logger.info(f"Decision: {action} ({reason})")
+        return action
+
     if open_conversations > 0:
         action, reason = "handle_replies", f"{open_conversations} open conversation(s) waiting"
     elif deployable > 0:

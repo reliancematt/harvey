@@ -18,6 +18,8 @@ import email
 import email.policy
 import imaplib
 import logging
+import time
+from datetime import datetime, timedelta
 from email.message import EmailMessage
 from email.utils import make_msgid, parseaddr
 
@@ -46,6 +48,21 @@ class SmtpImapProvider(MailProvider):
         self.imap_port = int(getattr(env, "imap_port", 993) or 993)
         self.imap_user = getattr(env, "imap_username", "") or self.smtp_user
         self.imap_pass = getattr(env, "imap_password", "") or self.smtp_pass
+        self.sent_folder = getattr(env, "imap_sent_folder", "")
+        # PulseBids mode reads a SHARED mailbox (support@) read-only, and only
+        # keeps mail from people we wrote to. None = not told yet.
+        pulsebids = getattr(config, "pulsebids", None)
+        self.read_only_mode = bool(getattr(pulsebids, "enabled", False))
+        self.lookback_days = int(getattr(pulsebids, "reply_lookback_days", 21) or 21)
+        self._known_emails: set[str] | None = None
+        self._known_message_ids: set[str] = set()
+
+    def set_known_correspondents(self, emails, message_ids) -> None:
+        """People we have written to and the Message-IDs we sent. In
+        read-only mode only mail from them, or answering those messages, is
+        fetched; everything else in the shared inbox is left untouched."""
+        self._known_emails = {e.strip().lower() for e in emails if e}
+        self._known_message_ids = {m.strip() for m in message_ids if m}
 
     def is_configured(self) -> bool:
         return bool(self.smtp_host and self.smtp_user and self.smtp_pass)
@@ -84,15 +101,94 @@ class SmtpImapProvider(MailProvider):
         except Exception as e:
             logger.error(f"SMTP send failed to {to_email}: {e}")
             return SendResult(ok=False, error=str(e)[:300])
+        if self.sent_folder:
+            await asyncio.get_event_loop().run_in_executor(None, self._file_in_sent, msg)
         return SendResult(ok=True, message_id=message_id, thread_ref=message_id)
+
+    def _file_in_sent(self, msg: EmailMessage) -> None:
+        """Put a copy in the Sent folder so the mailbox shows what went out.
+        Best effort: the email is already sent, so a failure only logs."""
+        try:
+            conn = imaplib.IMAP4_SSL(self.imap_host, self.imap_port)
+            try:
+                conn.login(self.imap_user, self.imap_pass)
+                conn.append(self.sent_folder, "\\Seen", imaplib.Time2Internaldate(time.time()),
+                            msg.as_bytes())
+            finally:
+                try:
+                    conn.logout()
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning(f"Could not file the sent email in '{self.sent_folder}': {e}")
 
     async def get_replies(self, limit: int = 50) -> list[InboundMessage]:
         loop = asyncio.get_event_loop()
         try:
+            if self.read_only_mode:
+                return await loop.run_in_executor(None, self._fetch_correspondence, limit)
             return await loop.run_in_executor(None, self._fetch_unseen, limit)
         except Exception as e:
             logger.error(f"IMAP fetch failed: {e}")
             return []
+
+    @staticmethod
+    def _imap_date(day: datetime) -> str:
+        months = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+        return f"{day.day:02d}-{months[day.month - 1]}-{day.year}"
+
+    def _wanted(self, headers) -> bool:
+        """Is this message from someone we wrote to, an answer to something
+        we sent, or a bounce? Anything else in a shared mailbox isn't ours."""
+        from_email = parseaddr(str(headers.get("From", "")))[1].lower()
+        if looks_like_bounce(from_email, str(headers.get("Subject", ""))):
+            return True
+        if self._known_emails is None:
+            return False
+        if from_email in self._known_emails:
+            return True
+        refs = f"{headers.get('In-Reply-To', '')} {headers.get('References', '')}".split()
+        return any(r.strip() in self._known_message_ids for r in refs)
+
+    def _fetch_correspondence(self, limit: int) -> list[InboundMessage]:
+        """Read-only read of the last ``lookback_days`` of the inbox, newest
+        first. The mailbox is opened read-only and messages are fetched with
+        BODY.PEEK, so nothing is marked read and nothing is moved: the
+        people using support@ see their mail exactly as it was. Replies Harvey
+        has already handled are skipped by the Handler's own dedup."""
+        out: list[InboundMessage] = []
+        conn = imaplib.IMAP4_SSL(self.imap_host, self.imap_port)
+        try:
+            conn.login(self.imap_user, self.imap_pass)
+            conn.select("INBOX", readonly=True)
+            since = self._imap_date(datetime.now() - timedelta(days=self.lookback_days))
+            status, data = conn.search(None, "SINCE", since)
+            if status != "OK" or not data or not data[0]:
+                return []
+            for msg_id in reversed(data[0].split()[-500:]):
+                if len(out) >= limit:
+                    break
+                status, parts = conn.fetch(
+                    msg_id,
+                    "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT IN-REPLY-TO REFERENCES)])")
+                if status != "OK" or not parts or not isinstance(parts[0], tuple):
+                    continue
+                headers = email.message_from_bytes(parts[0][1], policy=email.policy.default)
+                if not self._wanted(headers):
+                    continue
+                status, full = conn.fetch(msg_id, "(BODY.PEEK[])")
+                if status != "OK" or not full or not isinstance(full[0], tuple):
+                    continue
+                parsed = self._parse_rfc822(full[0][1])
+                if parsed:
+                    out.append(parsed)
+        finally:
+            try:
+                conn.logout()
+            except Exception:
+                pass
+        return out
 
     def _fetch_unseen(self, limit: int) -> list[InboundMessage]:
         out: list[InboundMessage] = []

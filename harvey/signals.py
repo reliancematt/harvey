@@ -384,6 +384,81 @@ SIGNAL_CATALOG: list[dict] = [
         "cost_note": "free (site HTML)",
         "confidence_floor": 0.0,
     },
+    # ── PulseBids: facts from the public tender award records ──
+    {
+        "code": "TENDER_LOSS",
+        "label": "Bid on a tender and did not win it",
+        "description": (
+            "The one tender this company is on record as bidding for without "
+            "winning it: reference, title and buyer (the text), with the "
+            "eTenders page as evidence. The winner and the award value are "
+            "deliberately not stored."
+        ),
+        "category": "pulsebids",
+        "value_type": "text",
+        "collector": "pulsebids",
+        "cost_note": "free (imported from your own tender database)",
+        "confidence_floor": 0.0,
+    },
+    {
+        "code": "LOSS_RECORDED_FLOOR",
+        "label": "Recorded tender losses (a floor)",
+        "description": (
+            "How many losses the feed records for this company. A minimum, "
+            "never the true figure, and never quoted to the company."
+        ),
+        "category": "pulsebids",
+        "value_type": "num",
+        "collector": "pulsebids",
+        "cost_note": "free (imported from your own tender database)",
+        "confidence_floor": 0.0,
+    },
+    {
+        "code": "NEVER_WON_ON_RECORD",
+        "label": "No win on record",
+        "description": "The feed records no tender win for this company.",
+        "category": "pulsebids",
+        "value_type": "bool",
+        "collector": "pulsebids",
+        "cost_note": "free (imported from your own tender database)",
+        "confidence_floor": 0.0,
+    },
+    {
+        "code": "LAST_BID_DATE",
+        "label": "Most recent recorded bid",
+        "description": "Date of the company's most recent recorded bid (YYYY-MM-DD).",
+        "category": "pulsebids",
+        "value_type": "text",
+        "collector": "pulsebids",
+        "cost_note": "free (imported from your own tender database)",
+        "confidence_floor": 0.0,
+    },
+    {
+        "code": "CONTACT_CONFIDENCE",
+        "label": "How sure the contact research is",
+        "description": (
+            "High / Medium / Low from the contact research. A first name is "
+            "used in the greeting only at High."
+        ),
+        "category": "pulsebids",
+        "value_type": "text",
+        "collector": "pulsebids",
+        "cost_note": "free (imported from your own research)",
+        "confidence_floor": 0.0,
+    },
+    {
+        "code": "WHAT_THEY_DO",
+        "label": "What the company does (researched)",
+        "description": (
+            "One researched phrase for what the company does. The only "
+            "personalisation an email has when there is no tender to open on."
+        ),
+        "category": "pulsebids",
+        "value_type": "text",
+        "collector": "pulsebids",
+        "cost_note": "free (imported from your own research)",
+        "confidence_floor": 0.0,
+    },
 ]
 
 

@@ -942,6 +942,75 @@ def cmd_sending(args):
     asyncio.run(_run())
 
 
+def cmd_pulsebids(args):
+    """PulseBids losing-bidder outreach: import the lead list, stage one email each."""
+    from harvey.state import StateManager
+
+    async def _run():
+        state = StateManager()
+        await state.init_db()
+        action = args.pulsebids_action
+
+        if action == "import":
+            from harvey.config import load_env
+            from harvey.pulsebids.importer import import_leads
+            from harvey.pulsebids.leads import attach_contacts, read_contacts, read_leads
+
+            if not args.leads:
+                raise SystemExit("harvey pulsebids import needs --leads <the build_lead_list CSV>")
+            leads = read_leads(args.leads)
+            spent_emails: set[str] = set()
+            if args.contacts:
+                contacts, spent_emails = read_contacts(args.contacts)
+                matched = attach_contacts(leads, contacts)
+                print(f"\n  Matched {matched} of {len(leads)} leads to researched contacts.")
+            report = await import_leads(
+                state, leads, spent_emails, env=load_env(), verify=args.verify)
+            print(f"  {report.companies_new} new companies, {report.companies_existing} already known.")
+            print(f"  {report.with_tender} leads have a readable tender to open on.")
+            print(f"  {report.prospects_new} contacts added: {report.verified} verified, "
+                  f"{report.unverified} not yet verified, {report.spent} already approached "
+                  f"(never staged), {report.no_contact} leads with no email.")
+            if report.unverified and not args.verify:
+                print("  Run again with --verify (needs REOON_API_KEY or ZEROBOUNCE_API_KEY) "
+                      "so Harvey will send to them.")
+            print("  Nothing has been staged or sent. Next: harvey pulsebids stage\n")
+
+        elif action == "stage":
+            from harvey.config import load_config
+            from harvey.pulsebids.importer import stage_outbox
+
+            config = load_config()
+            report = await stage_outbox(
+                state, config, limit=args.limit, allow_risky=args.allow_risky,
+                provider_name=config.channels.email.provider)
+            print(f"\n  Staged {report.staged} email(s) as pending review. "
+                  "Nothing is sent until you approve it (harvey outbox).")
+            for reason, count in sorted(report.skipped.items()):
+                print(f"  Skipped {count}: {reason}")
+            for line in report.needs_review:
+                print(f"  Check the wording: {line}")
+            if args.preview and report.previews:
+                company, subject, body = report.previews[0]
+                print(f"\n  --- preview: {company} ---\n  Subject: {subject}\n")
+                print(textwrap.indent(body, "  "))
+            print("")
+
+        else:
+            from harvey.pulsebids import is_pulsebids_source
+            total: dict[str, int] = {}
+            for status in ("queued", "new", "contacted", "replied", "opted_out", "lost"):
+                n = len([p for p in await state.get_prospects_by_status(status)
+                         if is_pulsebids_source(p.source)])
+                if n:
+                    total[status] = n
+            print("\n  PulseBids prospects by status: " + (
+                ", ".join(f"{k} {v}" for k, v in total.items()) or "none yet"))
+            print("")
+
+    asyncio.run(_run())
+
+
 def main():
     from harvey.textio import utf8_stdio
     utf8_stdio()
@@ -1088,6 +1157,19 @@ def main():
     sub = subparsers.add_parser(
         "retry-writes", help="Retry prospects the Writer couldn't write an email for")
     sub.set_defaults(func=cmd_retry_writes)
+
+    sub = subparsers.add_parser(
+        "pulsebids", help="PulseBids losing-bidder outreach: import leads, stage one email each")
+    sub.add_argument("pulsebids_action", choices=["import", "stage", "status"])
+    sub.add_argument("--leads", help="import: the build_lead_list CSV")
+    sub.add_argument("--contacts", help="import: the outreach workbook (.xlsx) or a CSV of researched contacts")
+    sub.add_argument("--verify", action="store_true",
+                     help="import: check each new address with your email verifier")
+    sub.add_argument("--limit", type=int, default=10, help="stage: how many emails (default 10)")
+    sub.add_argument("--allow-risky", action="store_true",
+                     help="stage: also catch-all addresses (off by default)")
+    sub.add_argument("--preview", action="store_true", help="stage: print the first email staged")
+    sub.set_defaults(func=cmd_pulsebids)
 
     sub = subparsers.add_parser("sending", help="Kill switch: pause/resume sending")
     sub.add_argument("sending_action", nargs="?", default="status",

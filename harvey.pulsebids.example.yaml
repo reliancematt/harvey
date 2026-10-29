@@ -1,0 +1,62 @@
+# PulseBids losing-bidder outreach: copy to harvey.local.yaml (gitignored
+# overrides win) and see docs/pulsebids.md. Put YOUR real details only in
+# harvey.local.yaml, never in this tracked file. Nothing here is a secret.
+
+persona:
+  name: "Your Name"
+  company: "YourProduct"
+  role: "Co-founder"
+  email: "support@yourdomain.co.za"      # the mailbox Harvey sends from
+  linkedin: ""
+  tone: "plain, direct, South African business English"
+
+product:
+  name: "YourProduct"
+  description: "Reads every South African government tender and shows SMMEs the ones they qualify for."
+  pricing: "R000 a month"
+  key_benefits: []
+  objection_responses: {}
+
+# Required by the config schema; unused in PulseBids mode (no prospecting).
+icp:
+  industries: []
+  company_size: ""
+  titles: []
+  geography: ["South Africa"]
+
+pulsebids:
+  enabled: true              # no model-written sequences, no generic prospecting
+  website: "yourdomain.co.za"  # shown in the signature
+  reply_lookback_days: 21    # the mailbox is shared, so it is read read-only
+
+channels:
+  email:
+    enabled: true
+    provider: "smtp"          # Zoho speaks plain SMTP + IMAP
+    max_daily_sends: 10       # start low; support@ also carries your digests
+    require_approval: true    # every email waits in the Outbox for you
+    send_to_risky: false
+    max_bounce_rate: 0.05
+    send_window:
+      start: "08:00"
+      end: "17:00"
+      weekdays_only: true
+      recipient_timezone: false    # one zone: usage.quiet_hours.timezone
+  linkedin:
+    enabled: false
+
+usage:
+  max_daily_claude_percent: 50
+  heartbeat_interval_minutes: 15
+  quiet_hours:
+    start: "20:00"
+    end: "07:00"
+    timezone: "Africa/Johannesburg"
+
+compliance:
+  # The footer Harvey adds under every cold email. POPIA s69(2): one approach.
+  postal_address: "YourProduct is operated by Your Company (Pty) Ltd, South Africa."
+  opt_out_line: 'One-time approach, I won''t follow up unless you reply. Reply "no thanks" and I will remove you.'
+  do_not_contact: []
+  precleared:
+    enabled: false             # Precleared covers GB and US only

@@ -703,6 +703,12 @@ class Handler:
             return True  # nothing to read; the sender can't send through it either
 
         self.last_read_problem = ""
+        if hasattr(self.provider, "set_known_correspondents"):
+            try:
+                emails, message_ids = await self.state.outbox_correspondents()
+                self.provider.set_known_correspondents(emails, message_ids)
+            except Exception as e:
+                logger.warning(f"Handler: couldn't list who we have written to: {e}")
         try:
             inbound = await self.provider.get_replies()
         except Exception as e:
