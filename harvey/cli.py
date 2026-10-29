@@ -968,7 +968,8 @@ def cmd_pulsebids(args):
                 matched = attach_contacts(leads, contacts)
                 print(f"\n  Matched {matched} of {len(leads)} leads to researched contacts.")
             report = await import_leads(
-                state, leads, spent_emails, env=load_env(), verify=args.verify)
+                state, leads, spent_emails, env=load_env(), verify=args.verify,
+                unchecked=args.unchecked)
             print(f"  {report.companies_new} new companies, {report.companies_existing} already known.")
             print(f"  {report.with_tender} leads have a readable tender to open on.")
             print(f"  {report.prospects_new} contacts added: {report.verified} verified, "
@@ -1220,6 +1221,9 @@ def main():
                           "researched contacts; the first file that knows a company wins")
     sub.add_argument("--verify", action="store_true",
                      help="import: check each new address with your email verifier")
+    sub.add_argument("--unchecked", action="store_true",
+                     help="import: no verifier; store addresses as 'risky' (needs "
+                          "stage --allow-risky and send_to_risky: true to send)")
     sub.add_argument("--limit", type=int, default=10, help="stage: how many emails (default 10)")
     sub.add_argument("--allow-risky", action="store_true",
                      help="stage: also catch-all addresses (off by default)")

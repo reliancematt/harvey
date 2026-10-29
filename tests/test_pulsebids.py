@@ -479,3 +479,14 @@ def test_short_name_words_must_be_the_whole_domain():
     assert not enrich.name_in_domain("AV Baloyi Consulting", "https://avbconsulting.co.za")
     assert enrich.name_in_domain("TS Group", "https://tsgroup.africa")
     assert enrich.name_in_domain("Zimele Civils", "https://zimele.co.za")
+
+
+@pytest.mark.asyncio
+async def test_unchecked_import_marks_risky_and_stage_needs_opt_in(state):
+    lead = _lead("Zimele Civils", email="info@zimele.co.za", what_they_do="road and civil works")
+    await import_leads(state, [lead], set(), unchecked=True)
+    prospect = await state.get_prospect_by_email("info@zimele.co.za")
+    assert prospect.email_status == "risky"
+    config = make_config()
+    assert (await stage_outbox(state, config, limit=5)).staged == 0
+    assert (await stage_outbox(state, config, limit=5, allow_risky=True)).staged == 1

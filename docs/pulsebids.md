@@ -111,3 +111,11 @@ anything weaker is `Medium`. Nothing is guessed. Results go to
 `data/pulsebids_found_contacts.csv` (gitignored); review them, then pass that
 file to `import --contacts` after the workbook. A re-run skips companies
 already searched.
+
+## Sending without an email verifier
+
+`harvey pulsebids import ... --unchecked` stores addresses as `risky` (not
+confirmed deliverable). Two opt-ins are then needed before anything can leave:
+`harvey pulsebids stage --allow-risky`, and `send_to_risky: true` under
+`channels.email` in `harvey.yaml` (the pre-send gate enforces it). Send a handful first
+and watch the support@ inbox for bounces before staging more.

@@ -91,7 +91,8 @@ def _tender_from_json(text: str, url: str) -> Tender | None:
 
 
 async def import_leads(state, leads: list[Lead], spent_emails: set[str] | None = None,
-                       env=None, verify: bool = False) -> ImportReport:
+                       env=None, verify: bool = False,
+                       unchecked: bool = False) -> ImportReport:
     """Record leads, facts and contacts. Idempotent: a re-run adds nothing
     for a company it already knows."""
     from harvey.signals import seed_signal_catalog
@@ -129,6 +130,12 @@ async def import_leads(state, leads: list[Lead], spent_emails: set[str] | None =
         if verify and not reason:
             from harvey.integrations.email_finder import verify_published_address
             email_status = await verify_published_address(lead.email, env)
+        if unchecked and not email_status and not reason:
+            # No verifier was run. Stored as "risky", Harvey's existing "not
+            # confirmed deliverable" status, so staging and the pre-send gate
+            # both need an explicit opt-in (stage --allow-risky and
+            # channels.email.send_to_risky) before anything can leave.
+            email_status = "risky"
         if email_status == "verified":
             report.verified += 1
         elif not reason:
