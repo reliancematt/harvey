@@ -53,6 +53,9 @@ BLOCKED_HOSTS = (
     "bidnet.com", "gumtree.co.za", "olx.co.za", "jobs.co.za", "pnet.co.za", "indeed.com",
     "glassdoor.com", "google.com", "bing.com", "duckduckgo.com", "cipc.co.za", "bizportal.gov.za",
     "easyfind.co.za", "ananzi.co.za", "mapquest.com", "foursquare.com", "tripadvisor.com",
+    "municipalities.co.za", "legalfundi.com", "government.co.za", "laws.africa", "sadcgov.com",
+    "saflii.org", "polity.org.za", "gazettes.africa", "africanbusinesspages.com",
+    "southafricantenders.com", "tendersinfo.com", "globaltenders.com", "dnbhoovers.com",
 )
 
 # Addresses that are never a person or inbox to write to.
@@ -204,7 +207,12 @@ def _try_site(lead: Lead, tokens: list[str], hit: Hit, root: str, fetch: Fetch) 
         return Found(lead.company, website=root, note=f"{domain}: confirmed, but no address printed on it")
     source = next(u for u, t in pages.items() if emails[0] in t.lower())
     title_has_name = _name_in(f"{page_title} {hit.title}", tokens)
-    confidence = "High" if (domain.endswith(".za") and title_has_name) else "Medium"
+    # High needs the company's own distinctive word in the domain itself.
+    # A name made of ordinary words ("Accreditation and Training Services")
+    # can match some other firm's page, so it stays Medium for a human to check.
+    label = re.sub(r"[^a-z0-9]", "", domain.split(".")[0])
+    name_in_domain = any(t in label for t in tokens)
+    confidence = "High" if (domain.endswith(".za") and title_has_name and name_in_domain) else "Medium"
     return Found(lead.company, website=root, email=emails[0], confidence=confidence, source=source)
 
 

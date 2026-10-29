@@ -444,3 +444,12 @@ def test_multi_loss_lead_holds_link_unless_explicit(tmp_path):
     p.write_text(header + row.format("https://e/t1"))
     lead = read_leads(p)[0]
     assert not lead.tender.link_uncertain and lead.tender.url == "https://e/t1"
+
+
+def test_generic_word_name_is_only_medium_unless_in_domain():
+    pages = {"https://assessortrainer.co.za": _site("Accreditation Training Services", "info@assessortrainer.co.za")}
+    found = enrich.find_contact(
+        _lead("Accreditation and Training Services"),
+        lambda q: [enrich.Hit("Accreditation Training Services", "https://assessortrainer.co.za")],
+        pages.get)
+    assert found.email and found.confidence == "Medium"
