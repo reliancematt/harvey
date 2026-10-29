@@ -72,7 +72,7 @@ def _tender_json(t: Tender) -> str:
     return json.dumps({
         "reference": t.reference, "title": t.title, "buyer": t.buyer, "url": t.url,
         "closed": t.closed, "title_truncated": t.title_truncated,
-        "review_reasons": t.review_reasons,
+        "link_uncertain": t.link_uncertain, "review_reasons": t.review_reasons,
     })
 
 
@@ -83,6 +83,7 @@ def _tender_from_json(text: str, url: str) -> Tender | None:
             reference=d["reference"], title=d["title"], buyer=d["buyer"],
             url=d.get("url") or url, closed=d.get("closed", ""),
             title_truncated=bool(d.get("title_truncated")),
+            link_uncertain=bool(d.get("link_uncertain")),
             review_reasons=list(d.get("review_reasons") or []),
         )
     except (ValueError, KeyError, TypeError):
@@ -214,7 +215,7 @@ async def _already_in_outbox(state, email: str) -> bool:
 
 
 async def stage_outbox(state, config, limit: int = 10, allow_risky: bool = False,
-                       provider_name: str = "smtp") -> StageReport:
+                       provider_name: str = "smtp", accept_link_risk: bool = False) -> StageReport:
     """Render and queue the email for up to ``limit`` eligible prospects.
 
     Everything lands as 'pending_review': this command never approves.
@@ -242,6 +243,10 @@ async def stage_outbox(state, config, limit: int = 10, allow_risky: bool = False
                 report.skip("no tender and no researched 'what they do'")
                 continue
             subject, body = rendered
+            if lead.tender is not None and lead.tender.link_uncertain and not accept_link_risk:
+                report.skip("eTenders link may not match the tender named "
+                            "(re-run build_lead_list for notable_loss_1_url)")
+                continue
             problems = copy_violations(subject, body)
             if problems:
                 report.skip("breaks a copy rule: " + "; ".join(problems))

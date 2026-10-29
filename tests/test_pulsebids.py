@@ -355,3 +355,92 @@ def test_longest_realistic_email_with_footer_fits_the_gate():
     result = pre_send_check("owner@example.co.za", subject, full, prospect=p,
                             postal_address=cc.postal_address)
     assert result.ok, result.reasons
+
+
+# ── contact finder (fake search / fetch, invented companies) ────────────────
+
+from harvey.pulsebids import enrich  # noqa: E402
+from harvey.pulsebids.leads import read_contacts, read_leads  # noqa: E402
+
+
+def _lead(name, **kw):
+    return Lead(company=name, key=company_key(name), tender=None, recorded_losses=1,
+                recorded_wins=0, last_bid="", evidence_url="", **kw)
+
+
+def _site(title, body):
+    return f"<html><head><title>{title}</title></head><body>{body}</body></html>"
+
+
+def test_distinctive_tokens_drop_generic_words():
+    assert enrich.distinctive_tokens("Zimele Trading and Projects (Pty) Ltd") == ["zimele"]
+    assert enrich.distinctive_tokens("General Construction Services CC") == []
+
+
+def test_registrable_handles_za_suffixes():
+    assert enrich.registrable("mail.zimele.co.za") == "zimele.co.za"
+    assert enrich.registrable("www.zimele.com") == "zimele.com"
+
+
+def test_confirmed_site_gives_high_confidence_on_domain_email():
+    pages = {"https://zimele.co.za": _site("Zimele Civils | Home", "Polokwane. info@zimele.co.za")}
+    found = enrich.find_contact(
+        _lead("Zimele Civils (Pty) Ltd"),
+        lambda q: [enrich.Hit("Zimele Civils", "https://zimele.co.za/")],
+        pages.get)
+    assert (found.email, found.confidence) == ("info@zimele.co.za", "High")
+
+
+def test_directory_and_wrong_company_rejected_never_guessed():
+    pages = {"https://other.co.za": _site("Other Works", "South Africa. info@other.co.za")}
+    found = enrich.find_contact(
+        _lead("Zimele Civils (Pty) Ltd"),
+        lambda q: [enrich.Hit("Zimele Civils", "https://www.facebook.com/zimele"),
+                   enrich.Hit("Zimele", "https://other.co.za")],
+        pages.get)
+    assert found.email == "" and "same company" in found.note
+
+
+def test_off_domain_and_noreply_emails_ignored():
+    text = "write to zimele@gmail.com or noreply@zimele.co.za or sales@zimele.co.za"
+    assert enrich.extract_emails(text, "zimele.co.za") == ["sales@zimele.co.za"]
+
+
+def test_contact_page_is_read_when_home_has_no_address():
+    pages = {"https://zimele.co.za": _site("Zimele Civils", "Polokwane"),
+             "https://zimele.co.za/contact": _site("Contact", "admin@zimele.co.za")}
+    found = enrich.find_contact(
+        _lead("Zimele Civils"), lambda q: [enrich.Hit("Zimele Civils", "https://zimele.co.za")],
+        pages.get)
+    assert found.email == "admin@zimele.co.za" and found.source.endswith("/contact")
+
+
+def test_enrich_skips_known_resumes_and_writes_pipeline_csv(tmp_path):
+    pages = {"https://zimele.co.za": _site("Zimele Civils", "info@zimele.co.za")}
+    leads = [_lead("Zimele Civils"), _lead("Has Email Co", email="a@b.co.za"),
+             _lead("Nobody Known")]
+    searches = []
+
+    def search(q):
+        searches.append(q)
+        return [enrich.Hit("Zimele Civils", "https://zimele.co.za")] if "Zimele" in q else []
+
+    out = tmp_path / "found.csv"
+    r1 = enrich.enrich_leads(leads, set(), out, search, pages.get)
+    assert (r1.found, r1.skipped_have_email) == (1, 1)
+    first_searches = len(searches)
+    r2 = enrich.enrich_leads(leads, set(), out, search, pages.get)
+    assert r2.searched == 0 and r2.skipped_done == 2 and len(searches) == first_searches
+    contacts, _ = read_contacts(out)
+    assert contacts[company_key("Zimele Civils")]["email"] == "info@zimele.co.za"
+
+
+def test_multi_loss_lead_holds_link_unless_explicit(tmp_path):
+    header = "company_name,notable_loss_1,notable_loss_2,evidence_url,notable_loss_1_url\n"
+    row = ('Acme,"T1/2026 · Roads · City of X · lost to Y",other,https://e/other,{}\n')
+    p = tmp_path / "l.csv"
+    p.write_text(header + row.format(""))
+    assert read_leads(p)[0].tender.link_uncertain
+    p.write_text(header + row.format("https://e/t1"))
+    lead = read_leads(p)[0]
+    assert not lead.tender.link_uncertain and lead.tender.url == "https://e/t1"

@@ -75,3 +75,39 @@ already ignored; do not add the CSV or workbook to the repo.
   research, but its domain guessing (.com, .io, .co) must be replaced with
   .co.za and identity confirmation before it is pointed at these leads.
 - Opt-out keywords are English only.
+
+## Zoho mailbox settings (support@ mailbox)
+
+If your Zoho Mail address starts `mail.zoho.com`, the account is on the `.com`
+data centre. Other regions use `.eu`, `.in`, `.com.au` or `.jp` hosts instead.
+
+```
+SMTP_HOST=smtp.zoho.com
+SMTP_PORT=587
+IMAP_HOST=imap.zoho.com
+IMAP_PORT=993
+SMTP_USERNAME=support@pulsebids.co.za
+IMAP_USERNAME=support@pulsebids.co.za
+SMTP_PASSWORD=<app password>
+IMAP_PASSWORD=<app password>
+```
+
+Set IMAP_HOST explicitly: it defaults to the SMTP host, which is wrong for Zoho. Enable IMAP in
+Zoho Mail (Settings, Mail Accounts, IMAP Access) and create an app password at
+accounts.zoho.com (Security, App Passwords). Keep it in `.env` only.
+
+## Finding contacts
+
+```
+harvey pulsebids find-contacts --leads data/leads.csv --contacts Outreach.xlsx --limit 50
+```
+
+Needs `SERPER_API_KEY`. For each lead with no email it searches for the
+company, accepts a site only when every distinctive word of the name is on it
+and it is South African, and takes only an address printed on that site's own
+domain. Directories, social networks and tender aggregators are never accepted.
+`High` means `.za` domain, name in the page title and an on-domain address;
+anything weaker is `Medium`. Nothing is guessed. Results go to
+`data/pulsebids_found_contacts.csv` (gitignored); review them, then pass that
+file to `import --contacts` after the workbook. A re-run skips companies
+already searched.

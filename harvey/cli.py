@@ -961,7 +961,10 @@ def cmd_pulsebids(args):
             leads = read_leads(args.leads)
             spent_emails: set[str] = set()
             if args.contacts:
-                contacts, spent_emails = read_contacts(args.contacts)
+                from harvey.pulsebids.leads import merge_contacts
+                loaded = [read_contacts(path) for path in args.contacts]
+                contacts = merge_contacts(*[c for c, _ in loaded])
+                spent_emails = set().union(*[e for _, e in loaded])
                 matched = attach_contacts(leads, contacts)
                 print(f"\n  Matched {matched} of {len(leads)} leads to researched contacts.")
             report = await import_leads(
@@ -983,7 +986,8 @@ def cmd_pulsebids(args):
             config = load_config()
             report = await stage_outbox(
                 state, config, limit=args.limit, allow_risky=args.allow_risky,
-                provider_name=config.channels.email.provider)
+                provider_name=config.channels.email.provider,
+                accept_link_risk=args.accept_link_risk)
             print(f"\n  Staged {report.staged} email(s) as pending review. "
                   "Nothing is sent until you approve it (harvey outbox).")
             for reason, count in sorted(report.skipped.items()):
@@ -995,6 +999,42 @@ def cmd_pulsebids(args):
                 print(f"\n  --- preview: {company} ---\n  Subject: {subject}\n")
                 print(textwrap.indent(body, "  "))
             print("")
+
+        elif action == "find-contacts":
+            from pathlib import Path
+
+            from harvey.config import load_env
+            from harvey.paths import PROJECT_ROOT
+            from harvey.pulsebids.enrich import enrich_leads, http_fetch, serper_search
+            from harvey.pulsebids.leads import (
+                attach_contacts, merge_contacts, read_contacts, read_leads)
+
+            if not args.leads:
+                raise SystemExit("harvey pulsebids find-contacts needs --leads <the build_lead_list CSV>")
+            key = load_env().serper_api_key
+            if not key:
+                raise SystemExit("find-contacts needs SERPER_API_KEY in .env (serper.dev). "
+                                 "It does not scrape search pages: those return rate-limit "
+                                 "pages that look like results.")
+            leads = read_leads(args.leads)
+            spent: set[str] = set()
+            if args.contacts:
+                loaded = [read_contacts(path) for path in args.contacts]
+                attach_contacts(leads, merge_contacts(*[c for c, _ in loaded]))
+                spent = set().union(*[e for _, e in loaded])
+            out = Path(args.out) if args.out else PROJECT_ROOT / "data" / "pulsebids_found_contacts.csv"
+            report = await asyncio.to_thread(
+                enrich_leads, leads, spent, out, serper_search(key), http_fetch(),
+                max(args.limit, 1))
+            print(f"\n  Searched {report.searched} companies, confirmed a published address for "
+                  f"{report.found}.")
+            print(f"  Skipped: {report.skipped_have_email} already have an email, "
+                  f"{report.skipped_spent} already approached, {report.skipped_done} done in an "
+                  "earlier run.")
+            for reason, count in sorted(report.unresolved.items(), key=lambda kv: -kv[1])[:8]:
+                print(f"  No contact ({count}): {reason}")
+            print(f"  Results: {out}\n  Review them, then: harvey pulsebids import --leads ... "
+                  f"--contacts <workbook> {out} --verify\n")
 
         else:
             from harvey.pulsebids import is_pulsebids_source
@@ -1160,14 +1200,20 @@ def main():
 
     sub = subparsers.add_parser(
         "pulsebids", help="PulseBids losing-bidder outreach: import leads, stage one email each")
-    sub.add_argument("pulsebids_action", choices=["import", "stage", "status"])
+    sub.add_argument("pulsebids_action", choices=["import", "stage", "status", "find-contacts"])
+    sub.add_argument("--out", help="find-contacts: where to write found contacts "
+                                   "(default data/pulsebids_found_contacts.csv)")
     sub.add_argument("--leads", help="import: the build_lead_list CSV")
-    sub.add_argument("--contacts", help="import: the outreach workbook (.xlsx) or a CSV of researched contacts")
+    sub.add_argument("--contacts", nargs="+",
+                     help="import / find-contacts: the outreach workbook (.xlsx) and/or CSVs of "
+                          "researched contacts; the first file that knows a company wins")
     sub.add_argument("--verify", action="store_true",
                      help="import: check each new address with your email verifier")
     sub.add_argument("--limit", type=int, default=10, help="stage: how many emails (default 10)")
     sub.add_argument("--allow-risky", action="store_true",
                      help="stage: also catch-all addresses (off by default)")
+    sub.add_argument("--accept-link-risk", action="store_true",
+                     help="stage: also leads whose eTenders link may be for another tender")
     sub.add_argument("--preview", action="store_true", help="stage: print the first email staged")
     sub.set_defaults(func=cmd_pulsebids)
 

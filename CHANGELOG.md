@@ -7,6 +7,8 @@ minor versions can still change behaviour.
 
 ## Unreleased
 
+- PulseBids: `find-contacts` (Serper-based, `.co.za`-aware contact finder), multi-file `--contacts`, and a hold on leads whose eTenders link may belong to a different tender.
+
 ### Added
 - PulseBids outreach mode (`harvey pulsebids import|stage|status`, `pulsebids.enabled`):
   one rendered email per imported lead, no model-written sequence, no follow-ups, copy

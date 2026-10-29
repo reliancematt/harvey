@@ -27,6 +27,7 @@ class Tender:
     url: str = ""
     closed: str = ""             # "June 2026"; blank when the export has none
     title_truncated: bool = False
+    link_uncertain: bool = False
     review_reasons: list[str] = field(default_factory=list)
 
 
@@ -104,9 +105,19 @@ def read_leads(csv_path: str | Path) -> list[Lead]:
             if not name:
                 continue
             url = (row.get("evidence_url") or "").strip()
-            tender = parse_notable_loss(row.get("notable_loss_1", ""), url)
+            # build_lead_list picks evidence_url from the first loss that has
+            # a link, but notable_loss_1 is the BIGGEST loss. With one loss
+            # they are the same tender; with several they may not be. The
+            # export now carries notable_loss_1_url; without it, a firm with
+            # more than one loss gets its link held for a human.
+            explicit = (row.get("notable_loss_1_url") or "").strip()
+            tender = parse_notable_loss(row.get("notable_loss_1", ""), explicit or url)
             if tender is not None:
                 tender.closed = (row.get("tender_closed") or "").strip()
+                if not explicit and (row.get("notable_loss_2") or "").strip():
+                    tender.link_uncertain = True
+                    tender.review_reasons.append(
+                        "eTenders link may belong to a different tender than the one named")
             leads.append(Lead(
                 company=name,
                 key=company_key(name),
@@ -165,6 +176,22 @@ def read_contacts(path: str | Path) -> tuple[dict[str, dict], set[str]]:
     # support@ is the sender, never a recipient.
     spent_emails = {e.lower() for e in spent_emails if not e.lower().startswith("support@pulsebids")}
     return contacts, spent_emails
+
+
+def merge_contacts(*sources: dict[str, dict]) -> dict[str, dict]:
+    """Combine contact files. The first file that knows a company wins; later
+    files only fill in what it left blank (e.g. the workbook has the status,
+    a later search file adds a website and an address)."""
+    merged: dict[str, dict] = {}
+    for source in sources:
+        for key, record in source.items():
+            if key not in merged:
+                merged[key] = dict(record)
+                continue
+            for field_name, value in record.items():
+                if value and not merged[key].get(field_name):
+                    merged[key][field_name] = value
+    return merged
 
 
 def attach_contacts(leads: list[Lead], contacts: dict[str, dict]) -> int:
