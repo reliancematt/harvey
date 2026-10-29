@@ -1009,6 +1009,14 @@ def cmd_pulsebids(args):
             from harvey.pulsebids.leads import (
                 attach_contacts, merge_contacts, read_contacts, read_leads)
 
+            if args.audit:
+                from harvey.pulsebids.enrich import audit_found
+                path = Path(args.out) if args.out else PROJECT_ROOT / "data" / "pulsebids_found_contacts.csv"
+                kept, moved = audit_found(path)
+                print(f"\n  Kept {kept} contacts whose domain carries the company's name; "
+                      f"moved {moved} to {path.with_name(path.stem + '.review' + path.suffix)} "
+                      "for you to check by hand.\n")
+                return
             if not args.leads:
                 raise SystemExit("harvey pulsebids find-contacts needs --leads <the build_lead_list CSV>")
             key = load_env().serper_api_key
@@ -1026,8 +1034,9 @@ def cmd_pulsebids(args):
             report = await asyncio.to_thread(
                 enrich_leads, leads, spent, out, serper_search(key), http_fetch(),
                 max(args.limit, 1))
-            print(f"\n  Searched {report.searched} companies, confirmed a published address for "
-                  f"{report.found}.")
+            print(f"\n  Searched {report.searched} companies: {report.found} confirmed, "
+                  f"{report.needs_review} found on a site whose domain lacks the company's name "
+                  "(in the .review file, not importable until you check them).")
             print(f"  Skipped: {report.skipped_have_email} already have an email, "
                   f"{report.skipped_spent} already approached, {report.skipped_done} done in an "
                   "earlier run.")
@@ -1201,6 +1210,8 @@ def main():
     sub = subparsers.add_parser(
         "pulsebids", help="PulseBids losing-bidder outreach: import leads, stage one email each")
     sub.add_argument("pulsebids_action", choices=["import", "stage", "status", "find-contacts"])
+    sub.add_argument("--audit", action="store_true",
+                     help="find-contacts: re-sort an existing results file (no searches)")
     sub.add_argument("--out", help="find-contacts: where to write found contacts "
                                    "(default data/pulsebids_found_contacts.csv)")
     sub.add_argument("--leads", help="import: the build_lead_list CSV")

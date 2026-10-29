@@ -453,3 +453,22 @@ def test_generic_word_name_is_only_medium_unless_in_domain():
         lambda q: [enrich.Hit("Accreditation Training Services", "https://assessortrainer.co.za")],
         pages.get)
     assert found.email and found.confidence == "Medium"
+
+
+def test_directory_domain_goes_to_review_not_import(tmp_path):
+    pages = {"https://supplierlist.co.za": _site("Blvck Elephant listing", "South Africa info@supplierlist.co.za")}
+    out = tmp_path / "f.csv"
+    r = enrich.enrich_leads(
+        [_lead("Blvck Elephant")], set(), out,
+        lambda q: [enrich.Hit("Blvck Elephant", "https://supplierlist.co.za")], pages.get)
+    assert (r.found, r.needs_review) == (0, 1)
+    assert "supplierlist" not in out.read_text()
+    assert "supplierlist" in enrich.review_path_for(out).read_text()
+
+
+def test_audit_resorts_existing_file(tmp_path):
+    out = tmp_path / "f.csv"
+    out.write_text("Company,Email,Website\nZimele Civils,info@zimele.co.za,https://zimele.co.za\n"
+                   "Dante Languages,info@x.co.za,https://umhlangatourism.co.za\n")
+    assert enrich.audit_found(out) == (1, 1)
+    assert "Dante" not in out.read_text() and "Dante" in enrich.review_path_for(out).read_text()

@@ -55,7 +55,10 @@ BLOCKED_HOSTS = (
     "easyfind.co.za", "ananzi.co.za", "mapquest.com", "foursquare.com", "tripadvisor.com",
     "municipalities.co.za", "legalfundi.com", "government.co.za", "laws.africa", "sadcgov.com",
     "saflii.org", "polity.org.za", "gazettes.africa", "africanbusinesspages.com",
-    "southafricantenders.com", "tendersinfo.com", "globaltenders.com", "dnbhoovers.com",
+    "procompare.co.za", "selltostate.com", "yibaverified.co.za", "fastquotes.co.za",
+    "medpages.info", "ilawyer.co.za", "defenceweb.co.za", "metropolis.org", "iziko.org.za",
+    "nationalgovernment.co.za", "tenderalerts.co.za", "dsclaw.co.za", "pmg.org.za",
+    "golegal.co.za", "engineeringnews.co.za", "southafricantenders.com", "tendersinfo.com", "globaltenders.com", "dnbhoovers.com",
 )
 
 # Addresses that are never a person or inbox to write to.
@@ -155,6 +158,21 @@ def extract_emails(text: str, site_domain: str) -> list[str]:
     return sorted(found, key=rank)
 
 
+def name_in_domain(company: str, website: str) -> bool:
+    """True when one of the company's distinctive words is in the site's domain.
+
+    Directories and lookalike sites (a procurement directory, a "verified
+    suppliers" list) print addresses that belong to THEM, not to the company
+    they list, and their domain never carries the company's name. Initials
+    domains (dlm.co.za for Dupleix Liquid Meters) fail this test too and go to
+    the review file rather than the importable one: a missed contact costs
+    nothing, an email to the wrong company does.
+    """
+    tokens = distinctive_tokens(company)
+    label = re.sub(r"[^a-z0-9]", "", registrable(host_of(website)).split(".")[0])
+    return bool(label) and any(t in label for t in tokens)
+
+
 def find_contact(lead: Lead, search: Search, fetch: Fetch, max_searches: int = 2) -> Found:
     """Search for the company, confirm the site is theirs, read an address off it."""
     tokens = distinctive_tokens(lead.company)
@@ -222,10 +240,45 @@ def _try_site(lead: Lead, tokens: list[str], hit: Hit, root: str, fetch: Fetch) 
 class EnrichReport:
     searched: int = 0
     found: int = 0
+    needs_review: int = 0
     skipped_have_email: int = 0
     skipped_spent: int = 0
     skipped_done: int = 0
     unresolved: dict[str, int] = field(default_factory=dict)
+
+
+def review_path_for(out_path: Path) -> Path:
+    return out_path.with_name(out_path.stem + ".review" + out_path.suffix)
+
+
+def audit_found(out_path: Path) -> tuple[int, int]:
+    """Re-sort an existing results file: rows whose domain carries the company's
+    own name stay; the rest move to the review file. Offline, no searches.
+    Returns (kept, moved)."""
+    with open(out_path, newline="", encoding="utf-8-sig") as f:
+        rows = list(csv.DictReader(f))
+    keep = [r for r in rows if name_in_domain(r["Company"], r.get("Website", ""))]
+    move = [r for r in rows if r not in keep]
+    review = review_path_for(out_path)
+    already = {r["Company"] for r in _read_rows(review)}
+    with open(review, "a", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=PIPELINE_FIELDS)
+        if f.tell() == 0:
+            w.writeheader()
+        w.writerows([{k: r.get(k, "") for k in PIPELINE_FIELDS} for r in move
+                     if r["Company"] not in already])
+    with open(out_path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=PIPELINE_FIELDS)
+        w.writeheader()
+        w.writerows([{k: r.get(k, "") for k in PIPELINE_FIELDS} for r in keep])
+    return len(keep), len(move)
+
+
+def _read_rows(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        return list(csv.DictReader(f))
 
 
 def read_done(path: Path) -> set[str]:
@@ -247,12 +300,17 @@ def enrich_leads(leads: list[Lead], spent_emails: set[str], out_path: Path,
     report = EnrichReport()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     misses_path = out_path.with_suffix(out_path.suffix + ".misses")
-    done = read_done(out_path) | _read_misses(misses_path)
+    done = read_done(out_path) | read_done(review_path_for(out_path)) | _read_misses(misses_path)
     new_file = not out_path.exists()
-    with open(out_path, "a", newline="", encoding="utf-8") as f:
+    review_path = review_path_for(out_path)
+    with open(out_path, "a", newline="", encoding="utf-8") as f, \
+            open(review_path, "a", newline="", encoding="utf-8") as rf:
         writer = csv.DictWriter(f, fieldnames=PIPELINE_FIELDS)
+        review_writer = csv.DictWriter(rf, fieldnames=PIPELINE_FIELDS)
         if new_file:
             writer.writeheader()
+        if rf.tell() == 0:
+            review_writer.writeheader()
         for lead in leads:
             if report.searched >= limit:
                 break
@@ -268,12 +326,17 @@ def enrich_leads(leads: list[Lead], spent_emails: set[str], out_path: Path,
             report.searched += 1
             result = find_contact(lead, search, fetch)
             if result.email:
-                report.found += 1
-                writer.writerow({
-                    "Company": lead.company, "Email": result.email, "Website": result.website,
-                    "Contact confidence": result.confidence, "Status": "Researched",
-                    "Source": result.source})
-                f.flush()
+                row = {"Company": lead.company, "Email": result.email, "Website": result.website,
+                       "Contact confidence": result.confidence, "Status": "Researched",
+                       "Source": result.source}
+                if name_in_domain(lead.company, result.website):
+                    report.found += 1
+                    writer.writerow(row)
+                    f.flush()
+                else:
+                    report.needs_review += 1
+                    review_writer.writerow(row)
+                    rf.flush()
             else:
                 report.unresolved[result.note] = report.unresolved.get(result.note, 0) + 1
                 _append_miss(misses_path, lead.key)
