@@ -170,7 +170,15 @@ def name_in_domain(company: str, website: str) -> bool:
     """
     tokens = distinctive_tokens(company)
     label = re.sub(r"[^a-z0-9]", "", registrable(host_of(website)).split(".")[0])
-    return bool(label) and any(t in label for t in tokens)
+    if not label:
+        return False
+    # A short word ("it", "ts") sits inside countless domains, so it only
+    # counts when it IS the domain, optionally followed by a generic word
+    # (tsgroup.co.za for "TS Group").
+    suffixes = GENERIC_WORDS | {"group"}
+    return any(
+        (t in label) if len(t) >= 4 else (label == t or any(label == t + g for g in suffixes))
+        for t in tokens)
 
 
 def find_contact(lead: Lead, search: Search, fetch: Fetch, max_searches: int = 2) -> Found:

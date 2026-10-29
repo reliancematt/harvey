@@ -472,3 +472,10 @@ def test_audit_resorts_existing_file(tmp_path):
                    "Dante Languages,info@x.co.za,https://umhlangatourism.co.za\n")
     assert enrich.audit_found(out) == (1, 1)
     assert "Dante" not in out.read_text() and "Dante" in enrich.review_path_for(out).read_text()
+
+
+def test_short_name_words_must_be_the_whole_domain():
+    assert not enrich.name_in_domain("Mastergrade IT", "https://mgit.co.za")
+    assert not enrich.name_in_domain("AV Baloyi Consulting", "https://avbconsulting.co.za")
+    assert enrich.name_in_domain("TS Group", "https://tsgroup.africa")
+    assert enrich.name_in_domain("Zimele Civils", "https://zimele.co.za")
